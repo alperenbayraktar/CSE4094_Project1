@@ -53,92 +53,117 @@ public class Trie
     // If not present, inserts key into trie 
     // If the key is prefix of trie node,  
     // just marks leaf node 
-    static void insert(string fileName, String key)
+    static void insert(string fileName, string key, int index)
     {
         int level;
         int length = key.Length;
-        int index;
+        int letter;
 
         TrieNode pCrawl = root;
 
         for (level = 0; level < length; level++)
         {
-            index = key[level] - '&';
-            if (pCrawl.children[index] == null)
-                pCrawl.children[index] = new TrieNode();
+            letter = key[level] - '&';
+            if (pCrawl.children[letter] == null)
+                pCrawl.children[letter] = new TrieNode();
 
-            pCrawl = pCrawl.children[index];
-            pCrawl.indexAtFile.Add(fileName,index);
+            pCrawl = pCrawl.children[letter];
+            //Add the index to the file, if it exist in the file already, add it to index array.
+            pCrawl.indexAtFile.CheckAndAdd(fileName,index);
         }
-        // mark last node as leaf 
+        //Add the file name to the word-end node. 
         pCrawl.endOfWordinFile.Add(fileName);
     }
 
     // Returns true if key  
     // presents in trie, else false 
-    /*static MyDictionary SearchByWord(string key)
+    static void SearchByWord(string key)
     {
         int level;
         int length = key.Length;
-        int index;
+        int letter;
         TrieNode pCrawl = root;
-        MyDictionary FilesAndIndexes = new MyDictionary();
         for (level = 0; level < length; level++)
         {
-            index = key[level] - '&';
+            letter = key[level] - '&';
 
-            if (pCrawl.children[index] == null)
+            if (pCrawl.children[letter] == null)
             {
-                return FilesAndIndexes;
             }
-            pCrawl = pCrawl.children[index];
+            pCrawl = pCrawl.children[letter];
         }
-        //return (pCrawl != null && pCrawl.isEndOfWord);
-    }
-    static bool search(String key)
-    {
-        int level;
-        int length = key.Length;
-        int index;
-        TrieNode pCrawl = root;
-
-        for (level = 0; level < length; level++)
+        List<string> output = new List<string>();
+        if (pCrawl != null)
         {
-            index = key[level] - '&';
-
-            if (pCrawl.children[index] == null)
-                return false;
-
-            pCrawl = pCrawl.children[index];
+            foreach (KeyValuePair<string, List<int>> pair in pCrawl.indexAtFile)
+            {
+                output.Add("In: " + pair.Key + ": " + key + " has been found at indexes: " + String.Join(", ", pair.Value));
+            }
         }
-
-        return (pCrawl != null && pCrawl.isEndOfWord);
+        Console.WriteLine(String.Join("\n", output));
     }
-    */
-    static List<List<string>> Preprocessing(string path, List<FileInfo> files)
+    static void SearchAllWords(List<FileInfo> files, TrieNode root, char[] str, int level)
     {
-        List<List<string>> listOfLists = new List<List<string>>();
-        int index;
-        for (index = 0; index < files.Count; index++)
+        if (root.endOfWordinFile.Count > 0 && IsCommon(files,root.endOfWordinFile))
         {
-            string filePath = path + "\\" + files[index].Name; 
-            List<string> filteredWords = new List<string>();
+            str[level] = '\0';
+            for(int l = level; l + 1< str.Length; l++)
+            {
+                str[l + 1] = ' ';
+            }
+            Console.WriteLine(str);
+        }
+        int i;
+        for (i = 0; i < ASCII_SIZE; i++)
+        {
+            if (root.children[i] != null)
+            {
+                str[level] = (char)(i + '&');
+                SearchAllWords(files,root.children[i], str, level + 1);
+            }
+        }
+    }
+    static bool IsCommon(List<FileInfo> files,List<string> endOfWordFiles)
+    {
+        List<string> fileList = new List<string>();
+        foreach(var file in files)
+        {
+            fileList.Add(file.Name);
+        }
+        return !fileList.Except(endOfWordFiles).Any();
+    }
+    static List<MyDictionary> Preprocessing(string path, List<FileInfo> files)
+    {
+        List<MyDictionary> listOfDicts = new List<MyDictionary>();
+        int fileCount;
+        
+        for (fileCount = 0; fileCount < files.Count; fileCount++)
+        {
+            int indexAtFile = 0;
+            string filePath = path + "\\" + files[fileCount].Name;
+            //since a word could be seen many times in a file, it will have different indexes. So a string,List<int> dictionary is needed.
+            MyDictionary filteredWordsandIndexes = new MyDictionary();
             using (StreamReader reader = new StreamReader(filePath))
             {
                 string[] exceptArray = { "-", "\n", " ", "\r", "\r\n" };
                 char[] splitArray = { ' ', '\n' };
                 // Read entire text file with ReadToEnd.
-                var words = reader.ReadToEnd().Split(splitArray).Except(exceptArray, StringComparer.OrdinalIgnoreCase);
+                var words = reader.ReadToEnd().Split(splitArray).Where(x => !exceptArray.Contains(x));
                 foreach (string word in words)
                 {
+                    //Current index is assigned to the current words index.
+                    int thisWordsIndex = indexAtFile;
+                    //Current index is incremented by current words length and one space since space is used for splitting.
+                    indexAtFile += word.Length + 1; 
+                    //Current word is cleared from the unnecessary characters.
                     string wordFiltered = word.Replace(",", "").Replace(".", "").Replace("\r", "").Replace("\n", "").ToLower(new CultureInfo("en-US", false)).ToString();
                     if(wordFiltered.Length > 0)
-                        filteredWords.Add(wordFiltered);                
+                        filteredWordsandIndexes.CheckAndAdd(wordFiltered, thisWordsIndex);                
                 }
-                listOfLists.Add(filteredWords);
+                listOfDicts.Add(filteredWordsandIndexes);
             }
         }        
-        return listOfLists;
+        return listOfDicts;
     }
     static List<FileInfo> SelectFiles(string path)
     {
@@ -159,50 +184,94 @@ public class Trie
                 i++;
             }
         }
-        Console.WriteLine("Please select files to be searched: (by index and commas like: 1,5,8)\nIf there is no input, all files will be selected by default");
+        Console.WriteLine("Please select files to be searched: (by index and commas like: 1,5,8)\nEnter 'ALL' to select all files");
         string[] files = Console.ReadLine().Split(',');
         
-        if(files.Length == 0)
+        if(files[0] == "ALL")
         {
-            Console.WriteLine("There are no files in the current folder.");
+            Console.WriteLine("All files have been selected.");
+            return TXTFiles;
         }
         else {
             Console.WriteLine("Selected Files: ");
             foreach (string file in files)
             {
+                if(Int32.Parse(file) > TXTFiles.Count || Int32.Parse(file) < 0)
+                {
+                    Console.WriteLine("Give a proper integer value.");
+                    return null;
+                } 
                 searchedFiles.Add(TXTFiles[Int32.Parse(file)]);
                 Console.WriteLine(TXTFiles[Int32.Parse(file)].Name);
             }
             return searchedFiles;
-        }  
-        return TXTFiles;
+        }        
+    }
+    static List<FileInfo> Prepare(string path)
+    {
+        List<FileInfo> selectedFiles = SelectFiles(path);
+        List<MyDictionary> allFilteredWordsandIndexes = Preprocessing(path, selectedFiles);
+
+        root = new TrieNode();
+
+        //In each file,
+        for (int fileCount = 0; fileCount < allFilteredWordsandIndexes.Count; fileCount++)
+        {
+            //in each word,
+            foreach (KeyValuePair<string, List<int>> pair in allFilteredWordsandIndexes[fileCount])
+            {
+                //insert the word and its index.
+                foreach (int index in pair.Value)
+                {
+                    insert(selectedFiles[fileCount].Name, pair.Key, index);
+                }
+            }
+        }
+        return selectedFiles;
     }
     public static void Main(string[] args)
     {
         string path = args[0];
-        List<FileInfo> selectedFiles = SelectFiles(path);
-        List<List<string>> allFilteredWords = Preprocessing(path,selectedFiles);
-
-        String[] output = { "Not present in trie", "Present in trie" };
-        
-        root = new TrieNode();
-
-        int i;
-        for(int fileCount = 0; fileCount < allFilteredWords.Count; fileCount++)
+        List<string> inputList = new List<string>();
+        inputList.Add("1");
+        inputList.Add("2");
+        inputList.Add("3");
+        while (true)
         {
-            for (i = 0; i < allFilteredWords[0].Count; i++)
-                insert(selectedFiles[fileCount].Name,allFilteredWords[fileCount][i]);
-        }        
-
-        /* Search for different keys 
-        if (search("alper") == true)
-            Console.WriteLine("alper --- " + output[1]);
-        else Console.WriteLine("alper --- " + output[0]);
-
-        if (search("alperen") == true)
-            Console.WriteLine("alperen --- " + output[1]);
-        else Console.WriteLine("alperen --- " + output[0]);
-        */
-        Console.ReadLine();
+            Console.WriteLine("What would you want to do?\n" +
+                "*********************************** \n" +
+                "1- Find files that includes words starting with your input\n" +
+                "2- Find common words in files you will choose\n" +
+                "3- Exit");
+            string input = Console.ReadLine();
+            if (!inputList.Contains(input))
+            {
+                Console.WriteLine("You did not enter an appropriate input. Please try again.");
+                continue;
+            }
+            else
+            {
+                switch (input)
+                {
+                    case "1":
+                        Prepare(path);
+                        Console.WriteLine("Please enter a string to see occurances.");
+                        string case1Input = Console.ReadLine();
+                        SearchByWord(case1Input);
+                        break;
+                    case "2":
+                        List<FileInfo> selectedFiles =Prepare(path);
+                        char[] str = new char[20];
+                        int level = 0;
+                        Console.WriteLine("Common words:");
+                        SearchAllWords(selectedFiles, root, str, level);
+                        break;
+                    case "3":
+                        return;
+                    default:
+                        break;
+                }
+            }
+        }
     }
 }
